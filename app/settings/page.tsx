@@ -5,6 +5,7 @@ import Snackbar, { SnackbarTone } from "@/components/Snackbar";
 import styles from "../page.module.css";
 import AppLoader from "@/components/AppLoader";
 import Modal from "@/components/Modal";
+import Brand from "@/components/Brand";
 
 type User = { _id: string; email: string; name?: string };
 type Member = { userId: string; role: string };
@@ -149,12 +150,12 @@ export default function SettingsPage() {
     return (
       <main className={styles.page}>
         <nav className={styles.nav}>
-          <a className={styles.brand} href="/">
-            Chat<span>App</span>
-          </a>
-          <a className={styles.navLink} href="/profile">
-            Profile
-          </a>
+          <Brand />
+          <div className={styles.navActions}>
+            <a className={styles.buttonSecondary} href="/chat">
+              Go to chat
+            </a>
+          </div>
         </nav>
         <section className={styles.accessDenied}>
           <span>!</span>
@@ -169,9 +170,7 @@ export default function SettingsPage() {
   return (
     <main className={styles.page}>
       <nav className={styles.nav}>
-        <a className={styles.brand} href="/">
-          Chat<span>App</span>
-        </a>
+        <Brand />
         <div className={styles.profileMenu}>
           <button
             className={styles.avatarButton}

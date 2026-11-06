@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Snackbar, { SnackbarTone } from "@/components/Snackbar";
 import styles from "../page.module.css";
 import AppLoader from "@/components/AppLoader";
+import Brand from "@/components/Brand";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<{ name: string; picture: string } | null>(null);
@@ -47,12 +48,12 @@ export default function ProfilePage() {
   return (
     <main className={styles.page}>
       <nav className={styles.nav}>
-        <a className={styles.brand} href="/">
-          Chat<span>App</span>
-        </a>
-        <a className={styles.navLink} href="/chat">
-          Back to chat
-        </a>
+        <Brand />
+        <div className={styles.navActions}>
+          <a className={styles.buttonSecondary} href="/chat">
+            Go to chat
+          </a>
+        </div>
       </nav>
       <section className={styles.profileCard}>
         <p className={styles.eyebrow}>Personal profile</p>

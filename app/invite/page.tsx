@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AppLoader from "@/components/AppLoader";
 import styles from "../page.module.css";
+import Brand from "@/components/Brand";
 
 type Invitation = { email: string; role: string; organizationName: string };
 
@@ -57,9 +58,7 @@ export default function InvitationPage() {
   return (
     <main className={styles.page}>
       <section className={styles.authCard}>
-        <a className={styles.brand} href="/">
-          Chat<span>App</span>
-        </a>
+        <Brand />
         {error ? (
           <>
             <h1>Invitation unavailable</h1>

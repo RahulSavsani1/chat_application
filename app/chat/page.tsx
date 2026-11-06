@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import styles from "../page.module.css";
 import Snackbar from "@/components/Snackbar";
 import AppLoader from "@/components/AppLoader";
+import Brand from "@/components/Brand";
 
 type User = { id?: string; _id?: string; email?: string; name?: string; role?: string };
 type Conversation = { _id: string; memberIds: string[] };
@@ -94,9 +95,7 @@ export default function ChatPage() {
   return (
     <main className={styles.page}>
       <nav className={styles.nav}>
-        <a className={styles.brand} href="/">
-          Chat<span>App</span>
-        </a>
+        <Brand />
         <div className={styles.profileMenu}>
           <button
             className={styles.avatarButton}

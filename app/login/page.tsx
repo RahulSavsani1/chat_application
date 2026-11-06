@@ -2,6 +2,7 @@ import LoginForm from "@/components/auth/LoginForm";
 import { getCurrentSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import styles from "../page.module.css";
+import Brand from "@/components/Brand";
 
 export const instant = false;
 
@@ -11,9 +12,7 @@ export default async function LoginPage() {
   return (
     <main className={styles.page}>
       <section className={styles.authCard}>
-        <a className={styles.brand} href="/">
-          Chat<span>App</span>
-        </a>
+        <Brand />
         <h1>Welcome back</h1>
         <p className={styles.description}>Log in with your email or Google.</p>
         <LoginForm />

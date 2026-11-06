@@ -1,13 +1,19 @@
 import styles from "./page.module.css";
-export default function Home() {
+import Brand from "@/components/Brand";
+import { getCurrentSession } from "@/lib/session";
+import { redirect } from "next/navigation";
+
+export const instant = false;
+
+export default async function Home() {
+  if (await getCurrentSession()) redirect("/chat");
+
   return (
     <main className={styles.page}>
       <div className={styles.orbOne} aria-hidden="true" />
       <div className={styles.orbTwo} aria-hidden="true" />
       <nav className={styles.nav} aria-label="Main navigation">
-        <a className={styles.brand} href="/">
-          Chat<span>App</span>
-        </a>
+        <Brand />
       </nav>
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
