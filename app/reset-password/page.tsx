@@ -1,0 +1,20 @@
+import ResetPasswordForm from "@/components/auth/ResetPasswordForm";
+import styles from "../page.module.css";
+
+export default function ResetPasswordPage() {
+  return (
+    <main className={styles.page}>
+      <section className={styles.authCard}>
+        <a className={styles.brand} href="/">
+          Chat<span>App</span>
+        </a>
+        <h1>Set a new password</h1>
+        <p className={styles.description}>Choose a new password for your account.</p>
+        <ResetPasswordForm />
+        <p className={styles.status}>
+          <a href="/login">Back to login</a>
+        </p>
+      </section>
+    </main>
+  );
+}

@@ -1,0 +1,51 @@
+import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
+import { verifyPassword } from "@/lib/password";
+import { createSession } from "@/lib/session";
+import { findPendingInvitation, acceptInvitation } from "@/lib/invitations";
+
+export async function POST(request: Request) {
+  let body: { email?: unknown; password?: unknown; inviteToken?: unknown };
+
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
+  }
+
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  const inviteToken = typeof body.inviteToken === "string" ? body.inviteToken.trim() : "";
+
+  if (!email || !password) {
+    return Response.json({ error: "Email and password are required." }, { status: 400 });
+  }
+
+  try {
+    const client = await mongoClientPromise;
+    await ensureDatabaseIndexes();
+    const database = client.db("chat_application");
+    const user = await database.collection("users").findOne({ email });
+
+    if (
+      !user ||
+      typeof user.passwordHash !== "string" ||
+      !(await verifyPassword(password, user.passwordHash))
+    ) {
+      return Response.json({ error: "Invalid email or password." }, { status: 401 });
+    }
+
+    if (inviteToken) {
+      const invitation = await findPendingInvitation(database, inviteToken);
+      if (!invitation || invitation.email !== email)
+        return Response.json(
+          { error: "This invitation is invalid, expired, or belongs to another email." },
+          { status: 400 },
+        );
+    }
+    await createSession(user._id.toString());
+    if (inviteToken) await acceptInvitation(database, inviteToken, user._id, email);
+    return Response.json({ message: "Logged in." });
+  } catch {
+    return Response.json({ error: "Could not log in right now." }, { status: 500 });
+  }
+}
