@@ -115,5 +115,10 @@ export function hasPermission(
   context: Awaited<ReturnType<typeof getAuthorizationContext>>,
   permission: Permission,
 ) {
-  return Boolean(context?.permissions.includes(permission));
+  return Boolean(context && hasRolePermission(context.role, permission));
+}
+
+export function hasRolePermission(role: unknown, permission: Permission) {
+  const normalizedRole = String(role ?? "").toLowerCase() as Role;
+  return Boolean(rolePermissions[normalizedRole]?.includes(permission));
 }

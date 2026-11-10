@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Snackbar, { SnackbarTone } from "@/components/Snackbar";
 import styles from "../page.module.css";
 import AppLoader from "@/components/AppLoader";
@@ -32,6 +33,8 @@ export default function SettingsPage() {
   const [tone, setTone] = useState<SnackbarTone>("info");
   const [linkModal, setLinkModal] = useState<{ title: string; url: string } | null>(null);
   const [deleteInvitationId, setDeleteInvitationId] = useState<string | null>(null);
+  const profileMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const profilePopoverRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     fetch("/api/users/me")
       .then((response) => {
@@ -43,6 +46,27 @@ export default function SettingsPage() {
         window.location.href = "/login";
       });
   }, []);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (
+        !profileMenuButtonRef.current?.contains(event.target) &&
+        !profilePopoverRef.current?.contains(event.target)
+      ) {
+        setMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
   useEffect(() => {
     if (section === "users")
       fetch("/api/admin/users")
@@ -174,20 +198,24 @@ export default function SettingsPage() {
         <div className={styles.profileMenu}>
           <button
             className={styles.avatarButton}
+            ref={profileMenuButtonRef}
             onClick={() => setMenuOpen(!menuOpen)}
             aria-label="Open profile menu"
+            aria-expanded={menuOpen}
           >
             <span className={styles.avatar}>{(user.name || user.email)[0].toUpperCase()}</span>
           </button>
-          {menuOpen && (
-            <div className={styles.popover}>
+        </div>
+        {menuOpen &&
+          createPortal(
+            <div className={styles.popover} ref={profilePopoverRef}>
               <strong>{user.name || user.email}</strong>
               <small>{user.email}</small>
               <a href="/profile">Update profile</a>
               <button onClick={logout}>Sign out</button>
-            </div>
+            </div>,
+            document.body,
           )}
-        </div>
       </nav>
       <section className={styles.settingsLayout}>
         <aside className={styles.settingsNav}>

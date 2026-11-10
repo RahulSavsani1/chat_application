@@ -7,10 +7,13 @@ import styles from "@/app/page.module.css";
 export default function ResetPasswordForm() {
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
+  const [hasResetLink, setHasResetLink] = useState(false);
   const [message, setMessage] = useState("");
   const [tone, setTone] = useState<SnackbarTone>("info");
   useEffect(() => {
-    setToken(new URLSearchParams(window.location.search).get("token") ?? "");
+    const resetLinkToken = new URLSearchParams(window.location.search).get("token") ?? "";
+    setToken(resetLinkToken);
+    setHasResetLink(Boolean(resetLinkToken));
   }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -27,6 +30,21 @@ export default function ResetPasswordForm() {
   return (
     <>
       <form className={styles.signupForm} onSubmit={submit}>
+        {!hasResetLink && (
+          <input
+            type="text"
+            value={token}
+            onChange={(event) => setToken(event.target.value.replace(/\D/g, "").slice(0, 8))}
+            placeholder="8-digit reset OTP"
+            aria-label="Password reset OTP"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{8}"
+            minLength={8}
+            maxLength={8}
+            required
+          />
+        )}
         <input
           type="password"
           value={password}

@@ -24,6 +24,39 @@ export async function ensureDatabaseIndexes() {
         .collection("users")
         .createIndex({ googleId: 1 }, { unique: true, sparse: true });
       await database.collection("sessions").createIndex({ token: 1 }, { unique: true });
+      await database.collection("messages").createIndex(
+        { conversationId: 1, senderId: 1, clientMessageId: 1 },
+        {
+          unique: true,
+          partialFilterExpression: { clientMessageId: { $type: "string" } },
+        },
+      );
+      await database.collection("conversations").createIndex(
+        { organizationId: 1, directKey: 1 },
+        {
+          unique: true,
+          partialFilterExpression: { directKey: { $type: "string" } },
+        },
+      );
+      await database
+        .collection("messages")
+        .createIndex({ conversationId: 1, createdAt: -1, _id: -1 });
+      await database
+        .collection("messages")
+        .createIndex({ conversationId: 1, senderId: 1, createdAt: 1 });
+      await database
+        .collection("conversations")
+        .createIndex({ organizationId: 1, memberIds: 1, updatedAt: -1 });
+      await database
+        .collection("conversation_reads")
+        .createIndex({ conversationId: 1, userId: 1 }, { unique: true });
+      await database
+        .collection("user_presence")
+        .createIndex({ organizationId: 1, userId: 1 }, { unique: true });
+      await database.collection("user_presence").createIndex({ organizationId: 1, lastSeenAt: 1 });
+      await database
+        .collection("rate_limits")
+        .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
       await database
         .collection("sessions")
         .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

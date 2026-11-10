@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { hashPassword } from "@/lib/password";
-import { mongoClientPromise } from "@/lib/mongodb";
+import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
+import { consumeRateLimit, requestAddress } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   let body: { token?: unknown; password?: unknown };
@@ -19,7 +20,19 @@ export async function POST(request: Request) {
     );
 
   const client = await mongoClientPromise;
+  await ensureDatabaseIndexes();
   const database = client.db("chat_application");
+  const limit = await consumeRateLimit(
+    database,
+    `password-reset:ip:${requestAddress(request)}`,
+    10,
+    60 * 60_000,
+  );
+  if (!limit.allowed)
+    return Response.json(
+      { error: "Too many reset attempts. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
+    );
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const reset = await database
     .collection("password_resets")

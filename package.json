@@ -3,22 +3,29 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently \"next dev\" \"node --env-file=.env scripts/chat-websocket-server.mjs\"",
+    "dev:next": "next dev",
+    "dev:websocket": "node --env-file=.env scripts/chat-websocket-server.mjs",
     "build": "next build",
-    "start": "next start",
+    "start": "concurrently --kill-others-on-fail \"next start\" \"node scripts/chat-websocket-server.mjs\"",
     "format": "prettier --write .",
     "test:smoke": "node tests/smoke-test.mjs"
   },
   "dependencies": {
     "mongodb": "^7.8.0",
     "next": "16.4.5",
+    "nodemailer": "^10.5.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^10.0.7",
     "prettier": "^3.9.10",
     "typescript": "^5"
   }

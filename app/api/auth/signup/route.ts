@@ -1,6 +1,7 @@
 import { hashPassword } from "@/lib/password";
 import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
 import { acceptInvitation, findPendingInvitation } from "@/lib/invitations";
+import { consumeRateLimit, requestAddress } from "@/lib/rate-limit";
 
 type SignupBody = { email: string; password: string; inviteToken?: string };
 
@@ -29,6 +30,18 @@ export async function POST(request: Request) {
     const client = await mongoClientPromise;
     await ensureDatabaseIndexes();
     const database = client.db("chat_application");
+    const limit = await consumeRateLimit(
+      database,
+      `signup:ip:${requestAddress(request)}`,
+      5,
+      60 * 60_000,
+    );
+    if (!limit.allowed) {
+      return Response.json(
+        { error: "Too many signup attempts. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
+      );
+    }
     const users = database.collection("users");
     const invitation = inviteToken ? await findPendingInvitation(database, inviteToken) : null;
     if (inviteToken && (!invitation || invitation.email !== email))

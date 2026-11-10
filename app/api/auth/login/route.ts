@@ -2,6 +2,7 @@ import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
 import { verifyPassword } from "@/lib/password";
 import { createSession } from "@/lib/session";
 import { findPendingInvitation, acceptInvitation } from "@/lib/invitations";
+import { consumeRateLimit, requestAddress } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   let body: { email?: unknown; password?: unknown; inviteToken?: unknown };
@@ -24,6 +25,18 @@ export async function POST(request: Request) {
     const client = await mongoClientPromise;
     await ensureDatabaseIndexes();
     const database = client.db("chat_application");
+    const address = requestAddress(request);
+    const limits = await Promise.all([
+      consumeRateLimit(database, `login:ip:${address}`, 20, 15 * 60_000),
+      consumeRateLimit(database, `login:identity:${address}:${email}`, 8, 15 * 60_000),
+    ]);
+    const blocked = limits.find((limit) => !limit.allowed);
+    if (blocked) {
+      return Response.json(
+        { error: "Too many login attempts. Please try again shortly." },
+        { status: 429, headers: { "Retry-After": String(blocked.retryAfterSeconds) } },
+      );
+    }
     const user = await database.collection("users").findOne({ email });
 
     if (
