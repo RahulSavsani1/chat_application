@@ -90,6 +90,8 @@ export default function ChatPage() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketServerReachable, setSocketServerReachable] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  const currentConversationRef = useRef<Conversation | null>(null);
+  const joinedConversationIdRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const readMarkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileMenuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -100,6 +102,9 @@ export default function ChatPage() {
   const scrollToBottomOnMessageChange = useRef(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationLoadRequestRef = useRef(0);
+  useEffect(() => {
+    currentConversationRef.current = conversation;
+  }, [conversation]);
   useLayoutEffect(() => {
     if (!scrollToBottomOnMessageChange.current) return;
     const messageList = messageListRef.current;
@@ -264,7 +269,6 @@ export default function ChatPage() {
     if (!user) return;
     setSocketConnected(false);
     setSocketServerReachable(false);
-    const conversationId = conversation?._id;
     const configuredUrl = process.env.NEXT_PUBLIC_WS_URL;
     const socketUrl =
       configuredUrl || `${window.location.protocol}//${window.location.hostname}:8080`;
@@ -318,46 +322,26 @@ export default function ChatPage() {
         if (active) setSocketServerReachable(false);
       }
     };
-    void checkSocketHealth();
-    const healthPoll = setInterval(() => void checkSocketHealth(), 10_000);
+    let healthPoll: ReturnType<typeof setInterval> | null = null;
+    const startHealthPoll = () => {
+      if (healthPoll) return;
+      void checkSocketHealth();
+      healthPoll = setInterval(() => void checkSocketHealth(), 10_000);
+    };
+    const stopHealthPoll = () => {
+      if (!healthPoll) return;
+      clearInterval(healthPoll);
+      healthPoll = null;
+    };
+    startHealthPoll();
     socket.on("connect", () => {
+      stopHealthPoll();
       setSocketConnected(true);
       setSocketServerReachable(true);
       setError("");
-      if (!conversationId) {
-        return;
-      }
-      socket?.emit(
-        "conversation:join",
-        { conversationId },
-        (result: { ok: boolean; error?: string }) => {
-          if (!result.ok) {
-            setError(result.error || "Could not open this conversation.");
-          } else {
-            setError("");
-            fetch(`/api/conversations/${conversationId}/messages`, { cache: "no-store" })
-              .then((response) => response.json())
-              .then((data) => {
-                if (Array.isArray(data.messages)) {
-                  scrollToBottomOnMessageChange.current = true;
-                  setReadReceipts((current) => mergeReadReceipts(current, data.readReceipts ?? []));
-                  setMessages((current) => {
-                    const byId = new Map(current.map((message) => [message._id, message]));
-                    for (const message of data.messages as Message[])
-                      byId.set(message._id, message);
-                    return [...byId.values()];
-                  });
-                }
-              })
-              .catch(() => {});
-            if (document.visibilityState === "visible" && document.hasFocus()) {
-              socket?.emit("conversation:read", { conversationId });
-            }
-          }
-        },
-      );
     });
     socket.on("connect_error", (error) => {
+      startHealthPoll();
       setSocketConnected(false);
       // Socket.IO does not automatically retry when namespace middleware rejects a connection.
       if (!socket?.active && active && !authRetryTimer) {
@@ -368,7 +352,9 @@ export default function ChatPage() {
       }
     });
     socket.on("disconnect", () => {
+      startHealthPoll();
       setSocketConnected(false);
+      joinedConversationIdRef.current = null;
       setTypingUserIds([]);
     });
     socket.on("presence:snapshot", (userIds: string[]) => setOnlineUserIds(userIds));
@@ -381,22 +367,33 @@ export default function ChatPage() {
           : current.filter((id) => id !== userId),
       );
     });
-    socket.on("chat:typing", ({ userId, isTyping }: { userId: string; isTyping: boolean }) => {
-      if (!conversationId) return;
-      setTypingUserIds((current) =>
-        isTyping
-          ? current.includes(userId)
-            ? current
-            : [...current, userId]
-          : current.filter((id) => id !== userId),
-      );
-    });
+    socket.on(
+      "chat:typing",
+      ({
+        conversationId,
+        userId,
+        isTyping,
+      }: {
+        conversationId: string;
+        userId: string;
+        isTyping: boolean;
+      }) => {
+        if (currentConversationRef.current?._id !== conversationId) return;
+        setTypingUserIds((current) =>
+          isTyping
+            ? current.includes(userId)
+              ? current
+              : [...current, userId]
+            : current.filter((id) => id !== userId),
+        );
+      },
+    );
     socket.on("chat:read", (receipt: ReadReceipt & { conversationId: string }) => {
-      if (!conversationId || receipt.conversationId !== conversationId) return;
+      if (currentConversationRef.current?._id !== receipt.conversationId) return;
       setReadReceipts((current) => mergeReadReceipts(current, [receipt]));
     });
     socket.on("chat:delivery", (receipt: ReadReceipt & { conversationId: string }) => {
-      if (!conversationId || receipt.conversationId !== conversationId) return;
+      if (currentConversationRef.current?._id !== receipt.conversationId) return;
       setReadReceipts((current) => mergeReadReceipts(current, [receipt]));
     });
     socket.on("conversation:activity", (message: Message & { conversationId: string }) => {
@@ -404,7 +401,7 @@ export default function ChatPage() {
         current.map((item) => {
           if (item._id !== message.conversationId) return item;
           const isActiveAndFocused =
-            conversationId === message.conversationId &&
+            currentConversationRef.current?._id === message.conversationId &&
             document.visibilityState === "visible" &&
             document.hasFocus();
           const isOwnMessage = message.senderId === user?.id;
@@ -423,11 +420,12 @@ export default function ChatPage() {
         if (!response.ok) return;
         const updatedConversations = data.conversations ?? [];
         setConversations(updatedConversations);
-        const currentConversation = conversationId
-          ? updatedConversations.find((item: Conversation) => item._id === conversationId)
+        const currentConversationId = currentConversationRef.current?._id;
+        const currentConversation = currentConversationId
+          ? updatedConversations.find((item: Conversation) => item._id === currentConversationId)
           : null;
         if (currentConversation) setConversation(currentConversation);
-        else if (conversationId) {
+        else if (currentConversationId) {
           setConversation(null);
           setMessages([]);
           window.history.replaceState(null, "", "/chat");
@@ -435,7 +433,7 @@ export default function ChatPage() {
       } catch {}
     });
     socket.on("chat:message", (message: Message & { conversationId: string }) => {
-      if (!conversationId || message.conversationId !== conversationId) return;
+      if (currentConversationRef.current?._id !== message.conversationId) return;
       scrollToBottomOnMessageChange.current = true;
       setMessages((current) =>
         current.some((item) => item._id === message._id) ? current : [...current, message],
@@ -443,11 +441,14 @@ export default function ChatPage() {
       const isReadingNow = document.visibilityState === "visible" && document.hasFocus();
       if (message.senderId !== user?.id) {
         if (isReadingNow) {
-          scheduleRead(conversationId);
+          scheduleRead(message.conversationId);
         } else if (socket?.connected) {
-          socket.emit("chat:delivered", { conversationId, messageId: message._id });
+          socket.emit("chat:delivered", {
+            conversationId: message.conversationId,
+            messageId: message._id,
+          });
         } else {
-          fetch(`/api/conversations/${conversationId}/delivered`, {
+          fetch(`/api/conversations/${message.conversationId}/delivered`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ messageId: message._id }),
@@ -457,8 +458,9 @@ export default function ChatPage() {
     });
 
     const markReadWhenFocused = () => {
-      if (conversationId && document.visibilityState === "visible" && document.hasFocus()) {
-        scheduleRead(conversationId);
+      const activeConversationId = currentConversationRef.current?._id;
+      if (activeConversationId && document.visibilityState === "visible" && document.hasFocus()) {
+        scheduleRead(activeConversationId);
       }
     };
     document.addEventListener("visibilitychange", markReadWhenFocused);
@@ -476,11 +478,67 @@ export default function ChatPage() {
         clearTimeout(readMarkTimerRef.current);
         readMarkTimerRef.current = null;
       }
-      clearInterval(healthPoll);
+      stopHealthPoll();
       socket?.disconnect();
+      joinedConversationIdRef.current = null;
       socketRef.current = null;
     };
-  }, [conversation?._id, user?.id]);
+  }, [user?.id]);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    const conversationId = conversation?._id ?? null;
+    if (!socketConnected || !socket?.connected) return;
+
+    const previousConversationId = joinedConversationIdRef.current;
+    if (previousConversationId && previousConversationId !== conversationId) {
+      socket.emit("conversation:leave", { conversationId: previousConversationId });
+    }
+    joinedConversationIdRef.current = conversationId;
+    if (!conversationId) return;
+
+    const requestId = conversationLoadRequestRef.current;
+    socket.emit(
+      "conversation:join",
+      { conversationId },
+      (result: { ok: boolean; error?: string }) => {
+        if (currentConversationRef.current?._id !== conversationId) return;
+        if (!result.ok) {
+          setError(result.error || "Could not open this conversation.");
+          return;
+        }
+        setError("");
+        fetch(`/api/conversations/${conversationId}/messages`, { cache: "no-store" })
+          .then((response) => response.json())
+          .then((data) => {
+            if (
+              !Array.isArray(data.messages) ||
+              currentConversationRef.current?._id !== conversationId ||
+              conversationLoadRequestRef.current !== requestId
+            )
+              return;
+            scrollToBottomOnMessageChange.current = true;
+            setReadReceipts((current) => mergeReadReceipts(current, data.readReceipts ?? []));
+            setMessages((current) => {
+              const byId = new Map(current.map((message) => [message._id, message]));
+              for (const message of data.messages as Message[]) byId.set(message._id, message);
+              return [...byId.values()];
+            });
+          })
+          .catch(() => {});
+        if (document.visibilityState === "visible" && document.hasFocus()) {
+          socket.emit("conversation:read", { conversationId });
+        }
+      },
+    );
+
+    return () => {
+      if (joinedConversationIdRef.current === conversationId) {
+        socket.emit("conversation:leave", { conversationId });
+        joinedConversationIdRef.current = null;
+      }
+    };
+  }, [conversation?._id, socketConnected]);
 
   async function openConversation(otherUser: User) {
     if (!otherUser._id) return;
@@ -706,22 +764,6 @@ export default function ChatPage() {
             document.body,
           )}
       </nav>
-      <div
-        className={styles.socketStatus}
-        data-connected={socketConnected}
-        role="status"
-        aria-live="polite"
-      >
-        <i aria-hidden="true" />
-        <span>
-          {socketConnected
-            ? "Socket connection established. You’re ready to chat."
-            : socketServerReachable
-              ? "Socket server is awake. Securing your chat connection…"
-              : "Waiting for socket connection. A sleeping Render service can take about a minute to wake."
-          }
-        </span>
-      </div>
       <section className={`${styles.chatShell} ${conversation ? styles.hasConversation : ""}`}>
         <aside className={styles.chatSidebar}>
           <div className={styles.chatSidebarHeader}>
@@ -1142,7 +1184,20 @@ export default function ChatPage() {
           )}
         </section>
       </section>
-      {error && <Snackbar message={error} tone="error" onClose={() => setError("")} />}
+      {error ? (
+        <Snackbar message={error} tone="error" onClose={() => setError("")} />
+      ) : !socketConnected ? (
+        <Snackbar
+          message={
+            socketServerReachable
+              ? "Socket server is awake. Securing your chat connection…"
+              : "Waiting for socket connection. A sleeping Render service can take about a minute to wake."
+          }
+          tone={socketServerReachable ? "info" : "warning"}
+          autoCloseMs={null}
+          onClose={() => {}}
+        />
+      ) : null}
     </main>
   );
 }

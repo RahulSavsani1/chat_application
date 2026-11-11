@@ -332,8 +332,8 @@ input:focus-visible {
 .snackbar {
   position: fixed;
   right: 24px;
-  bottom: 24px;
-  z-index: 20;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 10000;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -395,6 +395,9 @@ input:focus-visible {
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
+}
+.snackbar[data-persistent="true"] .snackbarClose {
+  display: none;
 }
 @keyframes snackbarIn {
   from {
@@ -1167,56 +1170,6 @@ input:focus-visible {
   min-height: 0;
   max-height: none;
   margin-top: 28px;
-}
-.socketStatus {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 10px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 12px auto -16px;
-  border: 1px solid #e8c49a;
-  border-radius: 999px;
-  padding: 8px 14px;
-  color: #79502c;
-  background: rgba(255, 250, 240, 0.94);
-  box-shadow: 0 4px 14px rgba(64, 57, 40, 0.06);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-.socketStatus i {
-  width: 9px;
-  height: 9px;
-  flex: 0 0 9px;
-  border-radius: 50%;
-  background: #e19a43;
-  box-shadow: 0 0 0 4px rgba(225, 154, 67, 0.15);
-  animation: socketPulse 1.5s ease-in-out infinite;
-}
-.socketStatus span {
-  min-width: 0;
-}
-.socketStatus[data-connected="true"] {
-  border-color: #c5e2d2;
-  color: #236347;
-  background: rgba(242, 250, 244, 0.96);
-}
-.socketStatus[data-connected="true"] i {
-  background: #36a675;
-  box-shadow: 0 0 0 4px rgba(54, 166, 117, 0.14);
-  animation: none;
-}
-@keyframes socketPulse {
-  50% { box-shadow: 0 0 0 7px rgba(225, 154, 67, 0.06); }
-}
-@media (max-width: 560px) {
-  .socketStatus {
-    width: 100%;
-    margin: 8px auto -16px;
-    border-radius: 14px;
-    font-size: 0.72rem;
-  }
 }
 .avatar {
   display: grid;

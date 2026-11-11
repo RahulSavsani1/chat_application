@@ -246,6 +246,10 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("conversation:leave", ({ conversationId } = {}) => {
+    if (typeof conversationId === "string") socket.leave(`conversation:${conversationId}`);
+  });
+
   socket.on("chat:send", async (payload = {}, acknowledge = () => {}) => {
     try {
       const result = await callAppApi(socket.data.ticket, "send", payload);
