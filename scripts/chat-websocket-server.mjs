@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { ObjectId } from "mongodb";
 import { Server } from "socket.io";
 
-const port = Number(process.env.WS_PORT || 8080);
+const port = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const onlineUsers = new Map();
 const presenceTimers = new Map();
 const configuredOrigins = [process.env.APP_ORIGIN, process.env.SOCKET_ALLOWED_ORIGINS]
@@ -29,6 +29,28 @@ const internalToken = createHmac("sha256", signingKey)
 
 const httpServer = createServer(async (request, response) => {
   const internalPath = request.url;
+  if (internalPath === "/healthz") {
+    const origin = request.headers.origin;
+    if (origin && configuredOrigins.includes(origin)) {
+      response.setHeader("Access-Control-Allow-Origin", origin);
+      response.setHeader("Vary", "Origin");
+    } else if (origin) {
+      response.writeHead(403).end();
+      return;
+    }
+    if (request.method === "OPTIONS") {
+      response.writeHead(204, { "Access-Control-Allow-Methods": "GET, OPTIONS" }).end();
+      return;
+    }
+    if (request.method !== "GET") {
+      response.writeHead(405).end();
+      return;
+    }
+    response
+      .writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })
+      .end(JSON.stringify({ ok: true }));
+    return;
+  }
   if (
     !["/internal/broadcast", "/internal/read", "/internal/membership-change"].includes(internalPath)
   )
@@ -309,6 +331,6 @@ io.on("connection", (socket) => {
   });
 });
 
-httpServer.listen(port, () => {
-  console.log(`Socket.IO chat server listening on http://localhost:${port}`);
+httpServer.listen(port, "0.0.0.0", () => {
+  console.log(`Socket.IO chat server listening on port ${port}`);
 });

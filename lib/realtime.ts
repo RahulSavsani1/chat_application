@@ -1,5 +1,12 @@
 import { createInternalBroadcastToken } from "@/lib/socket-ticket";
 
+function getSocketServerUrl() {
+  return (process.env.SOCKET_SERVER_URL || `http://127.0.0.1:${process.env.WS_PORT || 8080}`).replace(
+    /\/+$/,
+    "",
+  );
+}
+
 export async function publishChatMessage(message: {
   _id: string;
   conversationId: string;
@@ -8,9 +15,8 @@ export async function publishChatMessage(message: {
   text: string;
   createdAt: Date;
 }): Promise<number | null> {
-  const port = Number(process.env.WS_PORT || 8080);
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/internal/broadcast`, {
+    const response = await fetch(`${getSocketServerUrl()}/internal/broadcast`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -34,9 +40,8 @@ export async function publishConversationRead(read: {
   userId: string;
   readAt: Date;
 }) {
-  const port = Number(process.env.WS_PORT || 8080);
   try {
-    await fetch(`http://127.0.0.1:${port}/internal/read`, {
+    await fetch(`${getSocketServerUrl()}/internal/read`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -59,9 +64,8 @@ export async function publishMembershipChange(change: {
   organizationId: string;
   memberIds: string[];
 }) {
-  const port = Number(process.env.WS_PORT || 8080);
   try {
-    await fetch(`http://127.0.0.1:${port}/internal/membership-change`, {
+    await fetch(`${getSocketServerUrl()}/internal/membership-change`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

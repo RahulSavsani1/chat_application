@@ -87,6 +87,8 @@ export default function ChatPage() {
   const [readReceipts, setReadReceipts] = useState<ReadReceipt[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [socketServerReachable, setSocketServerReachable] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const readMarkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -260,6 +262,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
+    setSocketConnected(false);
+    setSocketServerReachable(false);
     const conversationId = conversation?._id;
     const configuredUrl = process.env.NEXT_PUBLIC_WS_URL;
     const socketUrl =
@@ -300,7 +304,26 @@ export default function ChatPage() {
       },
     });
     socketRef.current = socket;
+    const checkSocketHealth = async () => {
+      if (!active || socket?.connected) return;
+      try {
+        const response = await fetch(`${socketUrl.replace(/\/+$/, "")}/healthz`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok) throw new Error("Socket server is not ready.");
+        const health = await response.json();
+        setSocketServerReachable(health.ok === true);
+      } catch {
+        if (active) setSocketServerReachable(false);
+      }
+    };
+    void checkSocketHealth();
+    const healthPoll = setInterval(() => void checkSocketHealth(), 10_000);
     socket.on("connect", () => {
+      setSocketConnected(true);
+      setSocketServerReachable(true);
+      setError("");
       if (!conversationId) {
         return;
       }
@@ -335,7 +358,7 @@ export default function ChatPage() {
       );
     });
     socket.on("connect_error", (error) => {
-      setError(error.message || "Could not authenticate chat.");
+      setSocketConnected(false);
       // Socket.IO does not automatically retry when namespace middleware rejects a connection.
       if (!socket?.active && active && !authRetryTimer) {
         authRetryTimer = setTimeout(() => {
@@ -345,6 +368,7 @@ export default function ChatPage() {
       }
     });
     socket.on("disconnect", () => {
+      setSocketConnected(false);
       setTypingUserIds([]);
     });
     socket.on("presence:snapshot", (userIds: string[]) => setOnlineUserIds(userIds));
@@ -452,6 +476,7 @@ export default function ChatPage() {
         clearTimeout(readMarkTimerRef.current);
         readMarkTimerRef.current = null;
       }
+      clearInterval(healthPoll);
       socket?.disconnect();
       socketRef.current = null;
     };
@@ -539,7 +564,7 @@ export default function ChatPage() {
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!conversation || !text.trim()) return;
+    if (!conversation || !socketRef.current?.connected || !text.trim()) return;
     const clientMessageId = crypto.randomUUID();
     if (socketRef.current?.connected) {
       socketRef.current.emit(
@@ -681,6 +706,22 @@ export default function ChatPage() {
             document.body,
           )}
       </nav>
+      <div
+        className={styles.socketStatus}
+        data-connected={socketConnected}
+        role="status"
+        aria-live="polite"
+      >
+        <i aria-hidden="true" />
+        <span>
+          {socketConnected
+            ? "Socket connection established. You’re ready to chat."
+            : socketServerReachable
+              ? "Socket server is awake. Securing your chat connection…"
+              : "Waiting for socket connection. A sleeping Render service can take about a minute to wake."
+          }
+        </span>
+      </div>
       <section className={`${styles.chatShell} ${conversation ? styles.hasConversation : ""}`}>
         <aside className={styles.chatSidebar}>
           <div className={styles.chatSidebarHeader}>
@@ -1074,6 +1115,7 @@ export default function ChatPage() {
                   onBlur={stopTyping}
                   placeholder="Write a message..."
                   aria-label="Write a message"
+                  disabled={!socketConnected}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
@@ -1081,7 +1123,12 @@ export default function ChatPage() {
                     }
                   }}
                 />
-                <button className={styles.sendButton} type="submit" aria-label="Send message">
+                <button
+                  className={styles.sendButton}
+                  type="submit"
+                  aria-label="Send message"
+                  disabled={!socketConnected}
+                >
                   ↑
                 </button>
               </form>

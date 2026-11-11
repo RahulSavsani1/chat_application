@@ -6,6 +6,7 @@
     "dev": "concurrently \"next dev\" \"node --env-file=.env scripts/chat-websocket-server.mjs\"",
     "dev:next": "next dev",
     "dev:websocket": "node --env-file=.env scripts/chat-websocket-server.mjs",
+    "start:socket": "node scripts/chat-websocket-server.mjs",
     "build": "next build",
     "start": "concurrently --kill-others-on-fail \"next start\" \"node scripts/chat-websocket-server.mjs\"",
     "format": "prettier --write .",
