@@ -48,19 +48,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   });
   if (!member)
     return Response.json({ error: "That user is not in your organization." }, { status: 403 });
-  await context.database
+  if (conversation.memberIds.some((id: ObjectId) => id.equals(userId)))
+    return Response.json({ conversation });
+  const updatedResult = await context.database
     .collection<{ memberIds: ObjectId[]; adminIds: ObjectId[] }>("conversations")
     .updateOne(
       { _id: conversation._id, memberIds: context.user._id },
-      { $addToSet: { memberIds: userId }, $set: { updatedAt: new Date() } },
+      {
+        $addToSet: { memberIds: userId },
+        $max: { updatedAt: new Date() },
+      },
     );
   const updated = await context.database
     .collection("conversations")
     .findOne({ _id: conversation._id });
+  if (!updated) return Response.json({ error: "Group not found." }, { status: 404 });
+  if (!updatedResult.modifiedCount) return Response.json({ conversation: updated });
   await publishMembershipChange({
     conversationId: conversation._id.toString(),
     organizationId: context.organizationId.toString(),
-    memberIds: updated!.memberIds.map((id: ObjectId) => id.toString()),
+    memberIds: updated.memberIds.map((id: ObjectId) => id.toString()),
   });
   return Response.json({ conversation: updated });
 }
@@ -90,19 +97,26 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     return Response.json({ error: "Only group admins can remove other members." }, { status: 403 });
   if (conversation.createdBy?.equals(targetId))
     return Response.json({ error: "The group creator cannot leave the group." }, { status: 400 });
-  await context.database
+  if (!conversation.memberIds.some((id: ObjectId) => id.equals(targetId)))
+    return Response.json({ error: "That user is not a group member." }, { status: 404 });
+  const updatedResult = await context.database
     .collection<{ memberIds: ObjectId[]; adminIds: ObjectId[] }>("conversations")
     .updateOne(
       { _id: conversation._id, memberIds: targetId },
-      { $pull: { memberIds: targetId, adminIds: targetId }, $set: { updatedAt: new Date() } },
+      {
+        $pull: { memberIds: targetId, adminIds: targetId },
+        $max: { updatedAt: new Date() },
+      },
     );
   const updated = await context.database
     .collection("conversations")
     .findOne({ _id: conversation._id });
+  if (!updated) return Response.json({ error: "Group not found." }, { status: 404 });
+  if (!updatedResult.modifiedCount) return Response.json({ conversation: updated });
   await publishMembershipChange({
     conversationId: conversation._id.toString(),
     organizationId: context.organizationId.toString(),
-    memberIds: updated!.memberIds.map((id: ObjectId) => id.toString()),
+    memberIds: updated.memberIds.map((id: ObjectId) => id.toString()),
   });
   return Response.json({ conversation: updated });
 }

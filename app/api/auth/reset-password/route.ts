@@ -10,12 +10,14 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return Response.json({ error: "Request body must be a JSON object." }, { status: 400 });
 
   const token = typeof body.token === "string" ? body.token : "";
   const password = typeof body.password === "string" ? body.password : "";
-  if (!token || password.length < 8)
+  if (!token || password.length < 8 || password.length > 1024)
     return Response.json(
-      { error: "A valid token and password of at least 8 characters are required." },
+      { error: "A valid token and password between 8 and 1024 characters are required." },
       { status: 400 },
     );
 
@@ -36,17 +38,21 @@ export async function POST(request: Request) {
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const reset = await database
     .collection("password_resets")
-    .findOne({ tokenHash, expiresAt: { $gt: new Date() } });
+    .findOneAndDelete({ tokenHash, expiresAt: { $gt: new Date() } });
   if (!reset)
     return Response.json({ error: "This reset link is invalid or expired." }, { status: 400 });
 
-  await database
+  const updated = await database
     .collection("users")
     .updateOne(
       { _id: reset.userId },
       { $set: { passwordHash: await hashPassword(password), updatedAt: new Date() } },
     );
-  await database.collection("password_resets").deleteOne({ _id: reset._id });
+  if (!updated.matchedCount)
+    return Response.json(
+      { error: "The account for this reset link no longer exists." },
+      { status: 404 },
+    );
   await database.collection("sessions").deleteMany({ userId: reset.userId.toString() });
   return Response.json({ message: "Password reset successfully." });
 }

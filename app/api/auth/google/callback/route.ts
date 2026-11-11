@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
 import { createSession } from "@/lib/session";
-import { acceptInvitation } from "@/lib/invitations";
+import { acceptInvitation, findPendingInvitation } from "@/lib/invitations";
 
 type GoogleTokenResponse = { access_token?: string };
 type GoogleUser = {
@@ -70,43 +70,77 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
+  const email = googleUser.email.trim().toLowerCase();
   const client = await mongoClientPromise;
   await ensureDatabaseIndexes();
   const users = client.db("chat_application").collection("users");
   const database = client.db("chat_application");
   let user = await users.findOne({ googleId: googleUser.sub });
-  if (!user) user = await users.findOne({ email: googleUser.email.toLowerCase() });
+  if (!user) user = await users.findOne({ email });
+
+  if (inviteToken) {
+    const invitation = await findPendingInvitation(database, inviteToken);
+    if (!invitation || invitation.email !== email)
+      return NextResponse.json(
+        { error: "This invitation is invalid, expired, or belongs to another email." },
+        { status: 400 },
+      );
+  }
 
   if (!user) {
-    const result = await users.insertOne({
-      email: googleUser.email.toLowerCase(),
-      name: googleUser.name ?? "Google user",
-      picture: googleUser.picture,
-      googleId: googleUser.sub,
-      emailVerified: true,
-      createdAt: new Date(),
-    });
-    user = { _id: new ObjectId(result.insertedId), email: googleUser.email.toLowerCase() };
-  } else if (user.googleId && user.googleId !== googleUser.sub) {
+    try {
+      const result = await users.insertOne({
+        email,
+        name: googleUser.name ?? "Google user",
+        picture: googleUser.picture,
+        googleId: googleUser.sub,
+        emailVerified: true,
+        createdAt: new Date(),
+      });
+      user = { _id: new ObjectId(result.insertedId), email };
+    } catch (error) {
+      if (!(error instanceof MongoServerError && error.code === 11000)) throw error;
+      user =
+        (await users.findOne({ googleId: googleUser.sub })) ?? (await users.findOne({ email }));
+      if (!user) throw error;
+    }
+  }
+
+  if (user.googleId && user.googleId !== googleUser.sub) {
     return NextResponse.json(
       { error: "This Google account is linked to another user." },
       { status: 409 },
     );
-  } else if (!user.googleId) {
-    await users.updateOne(
-      { _id: user._id },
-      {
-        $set: {
-          googleId: googleUser.sub,
-          emailVerified: true,
-          name: googleUser.name,
-          picture: googleUser.picture,
+  }
+  if (!user.googleId) {
+    try {
+      await users.updateOne(
+        { _id: user._id, googleId: { $exists: false } },
+        {
+          $set: {
+            googleId: googleUser.sub,
+            emailVerified: true,
+            name: googleUser.name,
+            picture: googleUser.picture,
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      if (!(error instanceof MongoServerError && error.code === 11000)) throw error;
+    }
+    user = await users.findOne({ _id: user._id });
+    if (!user || user.googleId !== googleUser.sub) {
+      return NextResponse.json(
+        { error: "This Google account is linked to another user." },
+        { status: 409 },
+      );
+    }
   }
 
-  if (inviteToken) await acceptInvitation(database, inviteToken, user._id, user.email);
+  if (inviteToken) {
+    const accepted = await acceptInvitation(database, inviteToken, user._id, email);
+    if (!accepted.ok) return NextResponse.json({ error: accepted.error }, { status: 400 });
+  }
   await createSession(user._id.toString());
   cookieStore.delete("google_oauth_state");
   cookieStore.delete("google_oauth_invite");

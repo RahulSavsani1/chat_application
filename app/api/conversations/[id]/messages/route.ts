@@ -12,11 +12,18 @@ async function getConversation(
   id: string,
 ) {
   if (!ObjectId.isValid(id)) return null;
-  return context.database.collection("conversations").findOne({
+  const conversation = await context.database.collection("conversations").findOne({
     _id: new ObjectId(id),
     organizationId: context.organizationId,
     memberIds: context.user._id,
   });
+  if (
+    conversation?.type === "direct" &&
+    (conversation.memberIds.length !== 2 ||
+      conversation.memberIds[0].equals(conversation.memberIds[1]))
+  )
+    return null;
+  return conversation;
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -254,11 +254,13 @@ io.on("connection", (socket) => {
     try {
       const result = await callAppApi(socket.data.ticket, "send", payload);
       const savedMessage = result.message;
-      io.to(`conversation:${savedMessage.conversationId}`).emit("chat:message", savedMessage);
-      io.to(`conversation:${savedMessage.conversationId}`).emit(
-        "conversation:activity",
-        savedMessage,
-      );
+      if (result.created) {
+        io.to(`conversation:${savedMessage.conversationId}`).emit("chat:message", savedMessage);
+        io.to(`conversation:${savedMessage.conversationId}`).emit(
+          "conversation:activity",
+          savedMessage,
+        );
+      }
       acknowledge({ ok: true, message: savedMessage });
     } catch (error) {
       console.error("Socket.IO message forwarding failed:", error);

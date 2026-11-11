@@ -80,6 +80,8 @@ export default function ChatPage() {
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [text, setText] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -90,6 +92,11 @@ export default function ChatPage() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketServerReachable, setSocketServerReachable] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  const sendingMessageRef = useRef(false);
+  const pendingMessageRef = useRef<{ text: string; id: string; conversationId: string } | null>(
+    null,
+  );
+  const creatingGroupRef = useRef(false);
   const currentConversationRef = useRef<Conversation | null>(null);
   const joinedConversationIdRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
@@ -565,21 +572,31 @@ export default function ChatPage() {
 
   async function createGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch("/api/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "group", name: groupName, userIds: groupMemberIds }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setError(data.error || "Could not create this group.");
-      return;
+    if (creatingGroupRef.current) return;
+    creatingGroupRef.current = true;
+    setCreatingGroup(true);
+    try {
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "group", name: groupName, userIds: groupMemberIds }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "Could not create this group.");
+        return;
+      }
+      setGroupName("");
+      setGroupMemberIds([]);
+      if (groupMenuRef.current) groupMenuRef.current.open = false;
+      setConversations((current) => [data.conversation, ...current]);
+      await loadConversation(data.conversation);
+    } catch {
+      setError("Could not create this group. Please try again.");
+    } finally {
+      creatingGroupRef.current = false;
+      setCreatingGroup(false);
     }
-    setGroupName("");
-    setGroupMemberIds([]);
-    if (groupMenuRef.current) groupMenuRef.current.open = false;
-    setConversations((current) => [data.conversation, ...current]);
-    await loadConversation(data.conversation);
   }
 
   async function changeGroupMember(userId: string, method: "POST" | "DELETE") {
@@ -622,17 +639,63 @@ export default function ChatPage() {
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!conversation || !socketRef.current?.connected || !text.trim()) return;
-    const clientMessageId = crypto.randomUUID();
+    const messageText = text.trim();
+    if (!conversation || !socketRef.current?.connected || !messageText || sendingMessageRef.current)
+      return;
+    sendingMessageRef.current = true;
+    setSendingMessage(true);
+    const clientMessageId =
+      pendingMessageRef.current?.text === messageText &&
+      pendingMessageRef.current?.conversationId === conversation._id
+        ? pendingMessageRef.current.id
+        : crypto.randomUUID();
+    pendingMessageRef.current = {
+      text: messageText,
+      id: clientMessageId,
+      conversationId: conversation._id,
+    };
     if (socketRef.current?.connected) {
-      socketRef.current.emit(
+      const socket = socketRef.current;
+      let acknowledged = false;
+      const acknowledgementTimeout = setTimeout(() => {
+        if (acknowledged) return;
+        acknowledged = true;
+        const isCurrentAttempt =
+          pendingMessageRef.current?.id === clientMessageId &&
+          pendingMessageRef.current?.conversationId === conversation._id;
+        if (isCurrentAttempt) {
+          sendingMessageRef.current = false;
+          setSendingMessage(false);
+          if (currentConversationRef.current?._id === conversation._id) {
+            setError(
+              "The send confirmation timed out. Retry safely; duplicate protection is active.",
+            );
+          }
+        }
+      }, 12_000);
+      socket.emit(
         "chat:send",
-        { conversationId: conversation._id, text, clientMessageId },
+        { conversationId: conversation._id, text: messageText, clientMessageId },
         (result: { ok: boolean; error?: string; message?: Message }) => {
-          if (!result.ok) setError(result.error || "Message could not be sent.");
-          else {
-            setText("");
-            if (result.message) {
+          clearTimeout(acknowledgementTimeout);
+          acknowledged = true;
+          const isCurrentAttempt =
+            pendingMessageRef.current?.id === clientMessageId &&
+            pendingMessageRef.current?.conversationId === conversation._id;
+          if (isCurrentAttempt) {
+            sendingMessageRef.current = false;
+            setSendingMessage(false);
+          }
+          if (!result.ok) {
+            if (currentConversationRef.current?._id === conversation._id)
+              setError(result.error || "Message could not be sent.");
+          } else {
+            if (isCurrentAttempt) pendingMessageRef.current = null;
+            if (currentConversationRef.current?._id === conversation._id) {
+              setText((current) => (current === messageText ? "" : current));
+              setError("");
+            }
+            if (result.message && currentConversationRef.current?._id === conversation._id) {
               scrollToBottomOnMessageChange.current = true;
               setConversations((current) =>
                 current.map((item) =>
@@ -652,28 +715,51 @@ export default function ChatPage() {
       );
       return;
     }
-    const response = await fetch(`/api/conversations/${conversation._id}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, clientMessageId }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setError(data.error);
-      return;
+    try {
+      const response = await fetch(`/api/conversations/${conversation._id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: messageText, clientMessageId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        if (currentConversationRef.current?._id === conversation._id)
+          setError(data.error || "Message could not be sent.");
+        return;
+      }
+      const isCurrentAttempt =
+        pendingMessageRef.current?.id === clientMessageId &&
+        pendingMessageRef.current?.conversationId === conversation._id;
+      if (isCurrentAttempt) pendingMessageRef.current = null;
+      if (currentConversationRef.current?._id === conversation._id) {
+        scrollToBottomOnMessageChange.current = true;
+        setConversations((current) =>
+          current.map((item) =>
+            item._id === conversation._id
+              ? { ...item, lastMessage: data.message, unreadCount: 0 }
+              : item,
+          ),
+        );
+        setMessages((current) =>
+          current.some((item) => item._id === data.message._id)
+            ? current
+            : [...current, data.message],
+        );
+        setText((current) => (current === messageText ? "" : current));
+        setError("");
+      }
+    } catch {
+      if (currentConversationRef.current?._id === conversation._id)
+        setError("Message could not be confirmed. Retry safely; duplicate protection is active.");
+    } finally {
+      if (
+        pendingMessageRef.current?.id === clientMessageId &&
+        pendingMessageRef.current?.conversationId === conversation._id
+      ) {
+        sendingMessageRef.current = false;
+        setSendingMessage(false);
+      }
     }
-    scrollToBottomOnMessageChange.current = true;
-    setConversations((current) =>
-      current.map((item) =>
-        item._id === conversation._id
-          ? { ...item, lastMessage: data.message, unreadCount: 0 }
-          : item,
-      ),
-    );
-    setMessages((current) =>
-      current.some((item) => item._id === data.message._id) ? current : [...current, data.message],
-    );
-    setText("");
   }
 
   async function logout() {
@@ -813,9 +899,9 @@ export default function ChatPage() {
                   <button
                     className={styles.button}
                     type="submit"
-                    disabled={groupMemberIds.length < 1}
+                    disabled={groupMemberIds.length < 1 || creatingGroup}
                   >
-                    Create group
+                    {creatingGroup ? "Creating…" : "Create group"}
                   </button>
                 </form>
               </details>
@@ -1157,7 +1243,7 @@ export default function ChatPage() {
                   onBlur={stopTyping}
                   placeholder="Write a message..."
                   aria-label="Write a message"
-                  disabled={!socketConnected}
+                  disabled={!socketConnected || sendingMessage}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
@@ -1169,7 +1255,7 @@ export default function ChatPage() {
                   className={styles.sendButton}
                   type="submit"
                   aria-label="Send message"
-                  disabled={!socketConnected}
+                  disabled={!socketConnected || sendingMessage}
                 >
                   ↑
                 </button>

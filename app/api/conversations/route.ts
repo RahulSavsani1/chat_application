@@ -111,6 +111,8 @@ export async function POST(request: Request) {
         { error: "Select at least one other member for the group." },
         { status: 400 },
       );
+    if (requestedIds.length > 99)
+      return Response.json({ error: "A group can have up to 100 members." }, { status: 400 });
     const memberIds = requestedIds.map((id) => new ObjectId(id));
     if (memberIds.some((id) => id.equals(context.user._id)))
       return Response.json({ error: "You are added to the group automatically." }, { status: 400 });
@@ -156,9 +158,15 @@ export async function POST(request: Request) {
   }
   if (typeof body.userId !== "string" || !ObjectId.isValid(body.userId))
     return Response.json({ error: "A valid user is required." }, { status: 400 });
+  const requestedUserId = new ObjectId(body.userId);
+  if (requestedUserId.equals(context.user._id))
+    return Response.json(
+      { error: "You cannot start a direct chat with yourself." },
+      { status: 400 },
+    );
   const otherMembership = await context.database.collection("organization_members").findOne({
     organizationId: context.organizationId,
-    userId: new ObjectId(body.userId),
+    userId: requestedUserId,
     status: "active",
   });
   const otherUser = otherMembership
@@ -180,7 +188,7 @@ export async function POST(request: Request) {
     ? null
     : await context.database.collection("conversations").findOne({
         organizationId: context.organizationId,
-        memberIds: { $all: memberIds },
+        memberIds: { $all: memberIds, $size: 2 },
         type: "direct",
       });
   if (existing) return Response.json({ conversation: existing });

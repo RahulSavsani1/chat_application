@@ -1,3 +1,4 @@
+import { MongoServerError } from "mongodb";
 import { hashPassword } from "@/lib/password";
 import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
 import { acceptInvitation, findPendingInvitation } from "@/lib/invitations";
@@ -13,6 +14,8 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return Response.json({ error: "Request body must be a JSON object." }, { status: 400 });
 
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
@@ -22,8 +25,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
-  if (password.length < 8) {
-    return Response.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+  if (password.length < 8 || password.length > 1024) {
+    return Response.json(
+      { error: "Password must be between 8 and 1024 characters." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -65,25 +71,66 @@ export async function POST(request: Request) {
       emailVerified: false,
       createdAt: new Date(),
     });
-    if (inviteToken) {
-      await acceptInvitation(database, inviteToken, userResult.insertedId, email);
-    } else {
-      const organization = await database.collection("organizations").insertOne({
-        name: `${email.split("@")[0]}'s workspace`,
-        ownerId: userResult.insertedId,
-        createdAt: new Date(),
-      });
-      await database.collection("organization_members").insertOne({
-        organizationId: organization.insertedId,
-        userId: userResult.insertedId,
-        role: "owner",
-        status: "active",
-        createdAt: new Date(),
-      });
+    let workspaceId: typeof userResult.insertedId | null = null;
+    try {
+      if (inviteToken) {
+        const accepted = await acceptInvitation(
+          database,
+          inviteToken,
+          userResult.insertedId,
+          email,
+        );
+        if (!accepted.ok) {
+          await users.deleteOne({ _id: userResult.insertedId });
+          return Response.json({ error: accepted.error }, { status: 400 });
+        }
+      } else {
+        const workspace = await database.collection("organizations").insertOne({
+          name: `${email.split("@")[0]}'s workspace`,
+          ownerId: userResult.insertedId,
+          isPersonalWorkspace: true,
+          createdAt: new Date(),
+        });
+        workspaceId = workspace.insertedId;
+        await database.collection("organization_members").insertOne({
+          organizationId: workspaceId,
+          userId: userResult.insertedId,
+          role: "owner",
+          status: "active",
+          createdAt: new Date(),
+        });
+      }
+    } catch (error) {
+      const cleanup = [users.deleteOne({ _id: userResult.insertedId })];
+      if (workspaceId) {
+        cleanup.push(
+          database.collection("organization_members").deleteOne({
+            organizationId: workspaceId,
+            userId: userResult.insertedId,
+          }),
+        );
+        cleanup.push(database.collection("organizations").deleteOne({ _id: workspaceId }));
+      }
+      if (invitation) {
+        cleanup.push(
+          database.collection("organization_members").deleteOne({
+            organizationId: invitation.organizationId,
+            userId: userResult.insertedId,
+          }),
+        );
+      }
+      await Promise.allSettled(cleanup);
+      throw error;
     }
 
     return Response.json({ message: "Account created." }, { status: 201 });
-  } catch {
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) {
+      return Response.json(
+        { error: "An account with this email already exists." },
+        { status: 409 },
+      );
+    }
     return Response.json({ error: "Could not create the account." }, { status: 500 });
   }
 }

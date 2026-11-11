@@ -26,6 +26,8 @@ export async function PATCH(request: Request) {
   } catch {
     return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return Response.json({ error: "Request body must be a JSON object." }, { status: 400 });
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const picture = typeof body.picture === "string" ? body.picture.trim() : "";
   if (name.length < 2 || name.length > 60)

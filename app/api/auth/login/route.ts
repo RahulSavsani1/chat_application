@@ -12,6 +12,8 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return Response.json({ error: "Request body must be a JSON object." }, { status: 400 });
 
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
@@ -55,8 +57,11 @@ export async function POST(request: Request) {
           { status: 400 },
         );
     }
+    if (inviteToken) {
+      const accepted = await acceptInvitation(database, inviteToken, user._id, email);
+      if (!accepted.ok) return Response.json({ error: accepted.error }, { status: 400 });
+    }
     await createSession(user._id.toString());
-    if (inviteToken) await acceptInvitation(database, inviteToken, user._id, email);
     return Response.json({ message: "Logged in." });
   } catch {
     return Response.json({ error: "Could not log in right now." }, { status: 500 });

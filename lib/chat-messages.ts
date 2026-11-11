@@ -38,6 +38,11 @@ export async function saveChatMessage(
 
   const clientMessageId =
     typeof input.clientMessageId === "string" ? input.clientMessageId.trim() : "";
+  if (input.clientMessageId !== undefined && input.clientMessageId !== null) {
+    if (typeof input.clientMessageId !== "string" || clientMessageId.length === 0) {
+      throw new ChatMessageInputError("Message id must be a non-empty string.");
+    }
+  }
   if (clientMessageId.length > 128) {
     throw new ChatMessageInputError("Message id is too long.");
   }
@@ -48,7 +53,10 @@ export async function saveChatMessage(
     : null;
   if (query) {
     const existing = await messages.findOne(query);
-    if (existing) return { message: serialize(existing), created: false };
+    if (existing) {
+      await bumpConversationActivity(database, input.conversationId, existing.createdAt);
+      return { message: serialize(existing), created: false };
+    }
   }
 
   const document = {
@@ -65,14 +73,15 @@ export async function saveChatMessage(
   } catch (error) {
     if (query && error instanceof MongoServerError && error.code === 11000) {
       const existing = await messages.findOne(query);
-      if (existing) return { message: serialize(existing), created: false };
+      if (existing) {
+        await bumpConversationActivity(database, input.conversationId, existing.createdAt);
+        return { message: serialize(existing), created: false };
+      }
     }
     throw error;
   }
 
-  await database
-    .collection("conversations")
-    .updateOne({ _id: input.conversationId }, { $set: { updatedAt: document.createdAt } });
+  await bumpConversationActivity(database, input.conversationId, document.createdAt);
 
   return {
     message: {
@@ -84,6 +93,12 @@ export async function saveChatMessage(
     },
     created: true,
   };
+}
+
+async function bumpConversationActivity(database: Db, conversationId: ObjectId, activityAt: Date) {
+  await database
+    .collection("conversations")
+    .updateOne({ _id: conversationId }, { $max: { updatedAt: activityAt } });
 }
 
 function serialize(message: StoredChatMessage & { _id: ObjectId }): SavedChatMessage {

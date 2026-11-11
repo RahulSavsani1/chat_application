@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { createHash, randomBytes } from "node:crypto";
 import { getAuthorizationContext, hasPermission } from "@/lib/authorization";
+import { replacePasswordReset } from "@/lib/password-resets";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const context = await getAuthorizationContext();
@@ -9,8 +10,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return Response.json({ error: "Owner or admin access is required." }, { status: 403 });
   const { id } = await params;
   if (!ObjectId.isValid(id)) return Response.json({ error: "Invalid user." }, { status: 400 });
-  const body = (await request.json()) as { role?: string };
-  if (!body.role || !["owner", "admin", "member"].includes(body.role))
+  let body: { role?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return Response.json({ error: "Request body must be a JSON object." }, { status: 400 });
+  if (typeof body.role !== "string" || !["owner", "admin", "member"].includes(body.role))
     return Response.json({ error: "Invalid role." }, { status: 400 });
   if (body.role === "owner" && context.role !== "owner")
     return Response.json({ error: "Only the owner can assign ownership." }, { status: 403 });
@@ -39,13 +47,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!member) return Response.json({ error: "Member not found." }, { status: 404 });
   const rawToken = randomBytes(32).toString("hex");
   const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-  await context.database.collection("password_resets").deleteMany({ userId: member.userId });
-  await context.database.collection("password_resets").insertOne({
+  await replacePasswordReset(context.database, {
     userId: member.userId,
     tokenHash,
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    createdAt: new Date(),
   });
-  const resetUrl = `${new URL(request.url).origin}/reset-password?token=${rawToken}`;
+  const resetOrigin = new URL(process.env.APP_ORIGIN || request.url).origin;
+  const resetUrl = `${resetOrigin}/reset-password?token=${rawToken}`;
   return Response.json({ message: "Password reset link created.", resetUrl });
 }

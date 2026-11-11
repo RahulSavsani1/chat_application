@@ -66,6 +66,12 @@ export async function POST(request: Request) {
     memberIds: userId,
   });
   if (!conversation) return Response.json({ error: "Conversation not found." }, { status: 404 });
+  if (
+    conversation.type === "direct" &&
+    (conversation.memberIds.length !== 2 ||
+      conversation.memberIds[0].equals(conversation.memberIds[1]))
+  )
+    return Response.json({ error: "Conversation is malformed." }, { status: 409 });
   if (body.action === "join") return Response.json({ ok: true });
   if (body.action === "read") {
     const readAt = await markConversationRead(database, conversation._id, userId);
@@ -105,7 +111,12 @@ export async function POST(request: Request) {
       clientMessageId: body.clientMessageId,
     });
     return Response.json(
-      { ok: true, message: result.message, organizationId: organizationId.toString() },
+      {
+        ok: true,
+        created: result.created,
+        message: result.message,
+        organizationId: organizationId.toString(),
+      },
       { status: result.created ? 201 : 200 },
     );
   } catch (error) {

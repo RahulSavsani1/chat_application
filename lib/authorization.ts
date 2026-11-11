@@ -1,4 +1,4 @@
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
 import { getCurrentSession } from "@/lib/session";
 
@@ -68,25 +68,70 @@ export async function getAuthorizationContext() {
     .collection("organization_members")
     .findOne({ userId: user._id, status: "active" });
   if (!membership) {
-    const organization = await database.collection("organizations").insertOne({
-      name: `${user.name ?? user.email}'s workspace`,
+    const organizations = database.collection("organizations");
+    let personalWorkspace = await organizations.findOne({
       ownerId: user._id,
-      createdAt: new Date(),
+      isPersonalWorkspace: true,
     });
-    await database.collection("organization_members").insertOne({
-      organizationId: organization.insertedId,
+
+    if (!personalWorkspace) {
+      const legacyOwnedWorkspace = await organizations.findOne({ ownerId: user._id });
+      if (legacyOwnedWorkspace) {
+        try {
+          await organizations.updateOne(
+            { _id: legacyOwnedWorkspace._id, ownerId: user._id },
+            { $set: { isPersonalWorkspace: true } },
+          );
+          personalWorkspace = await organizations.findOne({
+            ownerId: user._id,
+            isPersonalWorkspace: true,
+          });
+        } catch (error) {
+          if (!(error instanceof MongoServerError && error.code === 11000)) throw error;
+          personalWorkspace = await organizations.findOne({
+            ownerId: user._id,
+            isPersonalWorkspace: true,
+          });
+        }
+      } else {
+        try {
+          const created = await organizations.insertOne({
+            name: `${user.name ?? user.email}'s workspace`,
+            ownerId: user._id,
+            isPersonalWorkspace: true,
+            createdAt: new Date(),
+          });
+          personalWorkspace = await organizations.findOne({ _id: created.insertedId });
+        } catch (error) {
+          if (!(error instanceof MongoServerError && error.code === 11000)) throw error;
+          personalWorkspace = await organizations.findOne({
+            ownerId: user._id,
+            isPersonalWorkspace: true,
+          });
+        }
+      }
+    }
+
+    if (!personalWorkspace) throw new Error("Could not create the user's personal workspace.");
+    const now = new Date();
+    const memberships = database.collection("organization_members");
+    try {
+      await memberships.updateOne(
+        { organizationId: personalWorkspace._id, userId: user._id },
+        {
+          $set: { role: "owner", status: "active", updatedAt: now },
+          $setOnInsert: { createdAt: now },
+        },
+        { upsert: true },
+      );
+    } catch (error) {
+      if (!(error instanceof MongoServerError && error.code === 11000)) throw error;
+    }
+    membership = await memberships.findOne({
+      organizationId: personalWorkspace._id,
       userId: user._id,
-      role: "owner",
       status: "active",
-      createdAt: new Date(),
     });
-    membership = {
-      _id: organization.insertedId,
-      organizationId: organization.insertedId,
-      userId: user._id,
-      role: "owner",
-      status: "active",
-    };
   }
   if (!membership) return null;
   const organization = await database

@@ -10,6 +10,8 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return Response.json({ error: "Request body must be a JSON object." }, { status: 400 });
   const token = typeof body.token === "string" ? body.token.trim() : "";
   if (!token) return Response.json({ error: "Invitation token is required." }, { status: 400 });
   const result = await acceptInvitation(

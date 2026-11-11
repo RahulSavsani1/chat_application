@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 import { ensureDatabaseIndexes, mongoClientPromise } from "@/lib/mongodb";
 import { consumeRateLimit, requestAddress } from "@/lib/rate-limit";
 import { isSmtpConfigured, sendPasswordResetEmail } from "@/lib/email";
+import { replacePasswordReset } from "@/lib/password-resets";
 
 export async function POST(request: Request) {
   let body: { email?: unknown };
@@ -11,8 +12,10 @@ export async function POST(request: Request) {
     return Response.json({ message: "If an account exists, a reset link has been sent." });
   }
 
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const genericMessage = "If an account exists, a reset link has been sent.";
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return Response.json({ message: genericMessage });
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!email) return Response.json({ message: genericMessage });
 
   const client = await mongoClientPromise;
@@ -34,10 +37,7 @@ export async function POST(request: Request) {
     : randomBytes(32).toString("hex");
   const tokenHash = createHash("sha256").update(rawToken).digest("hex");
   const expiresAt = new Date(Date.now() + (showDevelopmentOtp ? 10 : 60) * 60 * 1000);
-  await database.collection("password_resets").deleteMany({ userId: user._id });
-  await database
-    .collection("password_resets")
-    .insertOne({ userId: user._id, tokenHash, expiresAt, createdAt: new Date() });
+  await replacePasswordReset(database, { userId: user._id, tokenHash, expiresAt });
 
   if (smtpConfigured) {
     let appOrigin: string;
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         throw new Error("APP_ORIGIN is required to generate production password reset links.");
       appOrigin = new URL(process.env.APP_ORIGIN || request.url).origin;
     } catch (error) {
-      await database.collection("password_resets").deleteOne({ tokenHash });
+      await database.collection("password_resets").deleteOne({ userId: user._id, tokenHash });
       console.error("Could not create password reset link:", error);
       return Response.json({ message: genericMessage });
     }
@@ -54,12 +54,12 @@ export async function POST(request: Request) {
     try {
       await sendPasswordResetEmail(email, resetUrl);
     } catch (error) {
-      await database.collection("password_resets").deleteOne({ tokenHash });
+      await database.collection("password_resets").deleteOne({ userId: user._id, tokenHash });
       console.error("Could not send password reset email:", error);
       return Response.json({ message: genericMessage });
     }
   } else if (process.env.NODE_ENV === "production") {
-    await database.collection("password_resets").deleteOne({ tokenHash });
+    await database.collection("password_resets").deleteOne({ userId: user._id, tokenHash });
     console.error("Password reset email was not sent because SMTP is not configured.");
     return Response.json({ message: genericMessage });
   }
