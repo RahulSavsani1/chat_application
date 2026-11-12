@@ -1,10 +1,9 @@
 import { createInternalBroadcastToken } from "@/lib/socket-ticket";
 
 function getSocketServerUrl() {
-  return (process.env.SOCKET_SERVER_URL || `http://127.0.0.1:${process.env.WS_PORT || 8080}`).replace(
-    /\/+$/,
-    "",
-  );
+  return (
+    process.env.SOCKET_SERVER_URL || `http://127.0.0.1:${process.env.WS_PORT || 8080}`
+  ).replace(/\/+$/, "");
 }
 
 export async function publishChatMessage(message: {

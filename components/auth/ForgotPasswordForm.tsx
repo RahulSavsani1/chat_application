@@ -44,19 +44,26 @@ export default function ForgotPasswordForm() {
           placeholder="Email address"
           required
         />
-        <button className={styles.button} type="submit">
-          {isSubmitting ? "Sending..." : "Send reset link"}
+        <button className={styles.button} type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Sending..." : "Request reset instructions"}
         </button>
       </form>
       {otp && (
         <section className={styles.developmentOtp} aria-live="polite">
           <strong>SMTP is not configured</strong>
-          <p>For local testing, enter this temporary OTP on the reset password screen.</p>
+          <p>Enter this temporary OTP on the reset password screen.</p>
           <output aria-label="Temporary password reset OTP">{otp}</output>
-          <small>This code expires in 10 minutes and works only in development.</small>
-          <a className={styles.buttonSecondary} href="/reset-password">
+          <small>This temporary code expires in 10 minutes.</small>
+          <button
+            className={styles.buttonSecondary}
+            type="button"
+            onClick={() => {
+              window.sessionStorage.setItem("relay-password-reset-otp", otp);
+              window.location.assign("/reset-password");
+            }}
+          >
             Continue to reset password
-          </a>
+          </button>
         </section>
       )}
       {message && <Snackbar message={message} tone={tone} onClose={() => setMessage("")} />}

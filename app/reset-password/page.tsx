@@ -9,8 +9,7 @@ export default function ResetPasswordPage() {
         <Brand />
         <h1>Set a new password</h1>
         <p className={styles.description}>
-          Enter the code from your reset email or the temporary development OTP, then choose a new
-          password.
+          Enter the code from your reset email or temporary OTP, then choose a new password.
         </p>
         <ResetPasswordForm />
         <p className={styles.status}>

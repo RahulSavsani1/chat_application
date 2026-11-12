@@ -9,7 +9,12 @@ export default function LoginForm() {
   const [tone, setTone] = useState<SnackbarTone>("info");
   const [inviteToken, setInviteToken] = useState("");
   useEffect(() => {
-    setInviteToken(new URLSearchParams(window.location.search).get("invite") ?? "");
+    const params = new URLSearchParams(window.location.search);
+    setInviteToken(params.get("invite") ?? "");
+    if (params.get("passwordReset") === "success") {
+      setTone("success");
+      setMessage("Password reset successfully. Log in with your new password.");
+    }
   }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

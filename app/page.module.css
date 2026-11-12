@@ -869,7 +869,7 @@ input:focus-visible {
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 1000;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -923,14 +923,19 @@ input:focus-visible {
   gap: 10px;
   margin-top: 18px;
 }
-.modalLinkRow input {
+.modalLinkValue {
+  width: 100%;
+  min-height: 74px;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0 12px;
+  padding: 10px 12px;
   color: var(--muted);
   background: #f8fbf9;
   font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  resize: vertical;
 }
 .modalActions {
   display: flex;

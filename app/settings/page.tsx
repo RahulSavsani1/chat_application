@@ -32,6 +32,8 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState("");
   const [tone, setTone] = useState<SnackbarTone>("info");
   const [linkModal, setLinkModal] = useState<{ title: string; url: string } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [linkCopyError, setLinkCopyError] = useState("");
   const [deleteInvitationId, setDeleteInvitationId] = useState<string | null>(null);
   const profileMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const profilePopoverRef = useRef<HTMLDivElement | null>(null);
@@ -114,8 +116,12 @@ export default function SettingsPage() {
   async function resetPassword(userId: string) {
     const response = await fetch(`/api/admin/users/${userId}`, { method: "POST" });
     const data = await response.json();
-    if (data.resetUrl) setLinkModal({ title: "Password reset link", url: data.resetUrl });
-    showNotice(data.message ?? data.error, response.ok ? "success" : "error");
+    if (response.ok && data.resetUrl) {
+      setNotice("");
+      setLinkModal({ title: "Password reset link", url: data.resetUrl });
+    } else {
+      showNotice(data.message ?? data.error, "error");
+    }
   }
   async function inviteUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -131,9 +137,13 @@ export default function SettingsPage() {
         { _id: crypto.randomUUID(), email: inviteEmail, role: inviteRole, expiresAt: "" },
         ...current,
       ]);
-      if (data.inviteUrl) setLinkModal({ title: "Invitation link", url: data.inviteUrl });
+      if (data.inviteUrl) {
+        setNotice("");
+        setLinkModal({ title: "Invitation link", url: data.inviteUrl });
+      }
+    } else {
+      showNotice(data.message ?? data.error, "error");
     }
-    showNotice(data.message ?? data.error, response.ok ? "success" : "error");
   }
   async function deleteInvitation(id: string) {
     const response = await fetch(`/api/organization/invitations/${id}`, { method: "DELETE" });
@@ -145,9 +155,11 @@ export default function SettingsPage() {
   async function copyLink(url: string) {
     try {
       await navigator.clipboard.writeText(url);
-      showNotice("Link copied to clipboard.", "success");
+      setLinkCopied(true);
+      setLinkCopyError("");
     } catch {
-      showNotice("Could not copy the link. Select it and copy it manually.", "warning");
+      setLinkCopied(false);
+      setLinkCopyError("Could not copy automatically. Select the link and copy it manually.");
     }
   }
   async function logout() {
@@ -372,16 +384,33 @@ export default function SettingsPage() {
       </section>
       {notice && <Snackbar message={notice} tone={tone} onClose={() => setNotice("")} />}
       {linkModal && (
-        <Modal title={linkModal.title} onClose={() => setLinkModal(null)}>
+        <Modal
+          title={linkModal.title}
+          onClose={() => {
+            setLinkModal(null);
+            setLinkCopied(false);
+            setLinkCopyError("");
+          }}
+        >
           <p className={styles.modalDescription}>
-            This development link can be shared with the user. It expires automatically.
+            {linkModal.title === "Password reset link"
+              ? "Share this one-time link securely with the selected member. It expires in one hour."
+              : "Share this invitation link with the invited person. It expires in seven days."}
           </p>
           <div className={styles.modalLinkRow}>
-            <input value={linkModal.url} readOnly aria-label="Generated link" />
-            <button className={styles.button} onClick={() => copyLink(linkModal.url)}>
-              Copy
+            <textarea
+              className={styles.modalLinkValue}
+              value={linkModal.url}
+              readOnly
+              rows={3}
+              aria-label="Generated link"
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button className={styles.button} type="button" onClick={() => copyLink(linkModal.url)}>
+              {linkCopied ? "Copied" : "Copy"}
             </button>
           </div>
+          {linkCopyError && <p className={styles.modalDescription}>{linkCopyError}</p>}
         </Modal>
       )}
       {deleteInvitationId && (

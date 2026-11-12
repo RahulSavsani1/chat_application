@@ -1,31 +1,46 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Snackbar, { SnackbarTone } from "@/components/Snackbar";
 import styles from "@/app/page.module.css";
 
 export default function ResetPasswordForm() {
+  const router = useRouter();
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
   const [hasResetLink, setHasResetLink] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [tone, setTone] = useState<SnackbarTone>("info");
   useEffect(() => {
-    const resetLinkToken = new URLSearchParams(window.location.search).get("token") ?? "";
-    setToken(resetLinkToken);
+    const params = new URLSearchParams(window.location.search);
+    const resetLinkToken = params.get("token") ?? "";
+    const temporaryOtp =
+      params.get("otp") ?? window.sessionStorage.getItem("relay-password-reset-otp") ?? "";
+    window.sessionStorage.removeItem("relay-password-reset-otp");
+    setToken(resetLinkToken || temporaryOtp);
     setHasResetLink(Boolean(resetLinkToken));
   }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch("/api/auth/reset-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, password }),
-    });
-    const data = await response.json();
-    setTone(response.ok ? "success" : "error");
-    setMessage(data.message ?? data.error);
-    if (response.ok) setPassword("");
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password }),
+      });
+      const data = await response.json();
+      setTone(response.ok ? "success" : "error");
+      setMessage(data.message ?? data.error);
+      if (response.ok) router.replace("/login?passwordReset=success");
+    } catch {
+      setTone("error");
+      setMessage("Could not reach the server. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
   return (
     <>
@@ -53,8 +68,8 @@ export default function ResetPasswordForm() {
           minLength={8}
           required
         />
-        <button className={styles.button} type="submit">
-          Reset password
+        <button className={styles.button} type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Resetting..." : "Reset password"}
         </button>
       </form>
       {message && <Snackbar message={message} tone={tone} onClose={() => setMessage("")} />}
