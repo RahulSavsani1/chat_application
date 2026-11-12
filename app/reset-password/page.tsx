@@ -8,9 +8,6 @@ export default function ResetPasswordPage() {
       <section className={styles.authCard}>
         <Brand />
         <h1>Set a new password</h1>
-        <p className={styles.description}>
-          Enter the code from your reset email or temporary OTP, then choose a new password.
-        </p>
         <ResetPasswordForm />
         <p className={styles.status}>
           <a href="/login">Back to login</a>

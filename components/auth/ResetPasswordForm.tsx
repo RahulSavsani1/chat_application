@@ -10,6 +10,7 @@ export default function ResetPasswordForm() {
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
   const [hasResetLink, setHasResetLink] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [tone, setTone] = useState<SnackbarTone>("info");
@@ -21,6 +22,7 @@ export default function ResetPasswordForm() {
     window.sessionStorage.removeItem("relay-password-reset-otp");
     setToken(resetLinkToken || temporaryOtp);
     setHasResetLink(Boolean(resetLinkToken));
+    setIsReady(true);
   }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,8 +46,13 @@ export default function ResetPasswordForm() {
   }
   return (
     <>
+      {isReady && (
+        <p className={styles.description}>
+          {hasResetLink ? "Choose a new password." : "Enter your OTP and choose a new password."}
+        </p>
+      )}
       <form className={styles.signupForm} onSubmit={submit}>
-        {!hasResetLink && (
+        {isReady && !hasResetLink && (
           <input
             type="text"
             value={token}
@@ -68,7 +75,7 @@ export default function ResetPasswordForm() {
           minLength={8}
           required
         />
-        <button className={styles.button} type="submit" disabled={isSubmitting}>
+        <button className={styles.button} type="submit" disabled={!isReady || isSubmitting}>
           {isSubmitting ? "Resetting..." : "Reset password"}
         </button>
       </form>
