@@ -20,7 +20,13 @@ type Conversation = {
   unreadCount?: number;
   lastMessage?: Message | null;
 };
-type Message = { _id: string; text: string; senderId: string; createdAt?: string };
+type Message = {
+  _id: string;
+  text: string;
+  senderId: string;
+  conversationId?: string;
+  createdAt?: string;
+};
 type MessagePage = { messages: Message[]; hasMore: boolean };
 type ReadReceipt = { userId: string; readAt?: string; deliveredAt?: string };
 type ChatFilter = "all" | "unread" | "groups";
@@ -442,6 +448,11 @@ export default function ChatPage() {
     socket.on("chat:message", (message: Message & { conversationId: string }) => {
       if (currentConversationRef.current?._id !== message.conversationId) return;
       scrollToBottomOnMessageChange.current = true;
+      setConversations((current) =>
+        current.map((item) =>
+          item._id === message.conversationId ? { ...item, lastMessage: message } : item,
+        ),
+      );
       setMessages((current) =>
         current.some((item) => item._id === message._id) ? current : [...current, message],
       );
@@ -696,18 +707,19 @@ export default function ChatPage() {
               setError("");
             }
             if (result.message && currentConversationRef.current?._id === conversation._id) {
+              const visibleMessage = { ...result.message, text: messageText };
               scrollToBottomOnMessageChange.current = true;
               setConversations((current) =>
                 current.map((item) =>
                   item._id === conversation._id
-                    ? { ...item, lastMessage: result.message, unreadCount: 0 }
+                    ? { ...item, lastMessage: visibleMessage, unreadCount: 0 }
                     : item,
                 ),
               );
               setMessages((current) =>
                 current.some((item) => item._id === result.message?._id)
                   ? current
-                  : [...current, result.message!],
+                  : [...current, visibleMessage],
               );
             }
           }
@@ -736,14 +748,14 @@ export default function ChatPage() {
         setConversations((current) =>
           current.map((item) =>
             item._id === conversation._id
-              ? { ...item, lastMessage: data.message, unreadCount: 0 }
+              ? { ...item, lastMessage: { ...data.message, text: messageText }, unreadCount: 0 }
               : item,
           ),
         );
         setMessages((current) =>
           current.some((item) => item._id === data.message._id)
             ? current
-            : [...current, data.message],
+            : [...current, { ...data.message, text: messageText }],
         );
         setText((current) => (current === messageText ? "" : current));
         setError("");
@@ -1204,7 +1216,9 @@ export default function ChatPage() {
                             {sender ? userLabel(sender) : "Member"}
                           </small>
                         )}
-                        <span className={styles.messageText}>{message.text}</span>
+                        <span className={styles.messageText}>
+                          {message.text ?? "Encrypted message"}
+                        </span>
                         <span className={styles.messageMeta}>
                           <time>{messageTime(message.createdAt)}</time>
                           {status && (

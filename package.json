@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "concurrently --kill-others-on-fail \"next start\" \"node scripts/chat-websocket-server.mjs\"",
     "format": "prettier --write .",
-    "test:smoke": "node tests/smoke-test.mjs"
+    "db:schema:check": "node --env-file=.env scripts/apply-database-schemas.mjs",
+    "db:schema:apply": "node --env-file=.env scripts/apply-database-schemas.mjs --apply"
   },
   "dependencies": {
     "mongodb": "^7.8.0",

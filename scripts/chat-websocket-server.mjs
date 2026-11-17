@@ -70,7 +70,7 @@ const httpServer = createServer(async (request, response) => {
     let raw = "";
     for await (const chunk of request) {
       raw += chunk;
-      if (raw.length > 16_384) {
+      if (raw.length > 65_536) {
         response.writeHead(413).end();
         return;
       }
